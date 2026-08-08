@@ -1,6 +1,6 @@
 # Face Mask & Emotion Detection
 
-Acomputer-vision project that detects whether a face is wearing a mask and predicts its facial emotion. The interface is a local Streamlit website that works with an uploaded image or a photo taken from the browser camera.
+computer-vision project that detects whether a face is wearing a mask and predicts its facial emotion. The interface is a local Streamlit website that works with an uploaded image or a photo taken from the browser camera.
 
 ## What the project does
 
