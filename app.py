@@ -1,7 +1,8 @@
-"""Streamlit user interface for face-mask and emotion detection."""
+"""Streamlit user interface for live face-mask and emotion detection."""
+
+import time
 
 import cv2
-import numpy as np
 import streamlit as st
 
 from src.face_detector import detect_faces, load_face_detector
@@ -24,14 +25,8 @@ def load_pipeline():
     return detector, mask_model, emotion_model
 
 
-def read_image(image_file):
-    """Convert an uploaded or camera image into an OpenCV BGR image."""
-    image_bytes = np.frombuffer(image_file.getvalue(), np.uint8)
-    return cv2.imdecode(image_bytes, cv2.IMREAD_COLOR)
-
-
-def analyse_image(image, detector, mask_model, emotion_model):
-    """Detect faces, predict labels, and draw results on a copy of the image."""
+def analyse_frame(image, detector, mask_model, emotion_model):
+    """Detect faces in one frame, predict labels, and draw results on a copy."""
     result_image = image.copy()
     predictions = []
 
@@ -80,66 +75,87 @@ st.markdown(
         }
     </style>
     <p class="main-title">Face Mask & Emotion Detection</p>
-    <p class="subtitle">Upload a photo or use your camera to detect masks and facial emotions.</p>
+    <p class="subtitle">Live webcam detection of masks and facial emotions, in real time.</p>
     """,
     unsafe_allow_html=True,
 )
 
 with st.sidebar:
     st.header("How it works")
-    st.write("1. Choose an image source.")
-    st.write("2. The app finds each face.")
-    st.write("3. It predicts mask status and emotion.")
+    st.write("1. Press **Start camera**.")
+    st.write("2. The app finds each face in the live video.")
+    st.write("3. It predicts mask status and emotion on every frame.")
     st.divider()
     st.caption("Built with OpenCV, MobileNetV2, TensorFlow, and Streamlit.")
 
-source = st.radio("Choose image source", ["Upload image", "Use camera"], horizontal=True)
+if "camera_on" not in st.session_state:
+    st.session_state.camera_on = False
 
-if source == "Upload image":
-    image_file = st.file_uploader("Upload a JPG or PNG image", type=["jpg", "jpeg", "png"])
-else:
-    image_file = st.camera_input("Take a photo")
+controls = st.columns(2)
+start_button = controls[0].button(
+    "▶ Start camera", type="primary", disabled=st.session_state.camera_on
+)
+stop_button = controls[1].button("⏹ Stop camera", disabled=not st.session_state.camera_on)
 
-if image_file is None:
-    st.info("Choose an image source above to start detection.")
-    st.stop()
+if start_button:
+    st.session_state.camera_on = True
+    st.rerun()
+if stop_button:
+    st.session_state.camera_on = False
 
-image = read_image(image_file)
-if image is None:
-    st.error("This image could not be read. Please choose another JPG or PNG file.")
+frame_slot = st.empty()
+status_slot = st.empty()
+
+if not st.session_state.camera_on:
+    frame_slot.info("Press **Start camera** to begin live detection from your webcam.")
     st.stop()
 
 try:
     detector, mask_model, emotion_model = load_pipeline()
-    with st.spinner("Detecting faces and making predictions..."):
-        result_image, predictions = analyse_image(image, detector, mask_model, emotion_model)
 except (FileNotFoundError, ImportError) as error:
+    st.session_state.camera_on = False
     st.error(f"Setup problem: {error}")
-    st.info("Run `pip install -r requirements.txt` and make sure both .h5 files are in models/.")
+    st.info("Run `pip install -r requirements.txt` and make sure the .h5 and .keras files are in models/.")
     st.stop()
 
-left_column, right_column = st.columns([1.6, 1])
+camera = cv2.VideoCapture(0)
+if not camera.isOpened():
+    st.session_state.camera_on = False
+    st.error("Could not open your camera. Close other apps using it and try again.")
+    st.stop()
 
-with left_column:
-    st.subheader("Detection result")
-    st.image(cv2.cvtColor(result_image, cv2.COLOR_BGR2RGB), use_container_width=True)
+frame_count = 0
+fps = 0.0
+start_time = time.time()
 
-with right_column:
-    st.subheader("Predictions")
-    if not predictions:
-        st.warning("No face was detected. Try a clearer, front-facing photo.")
-    else:
-        st.success(f"Found {len(predictions)} face(s)")
-        for number, prediction in enumerate(predictions, start=1):
-            st.markdown(
-                f"""
-                <div class="result-card">
-                    <b>Face {number}</b><br>
-                    Mask: <b>{prediction['mask'].replace('_', ' ').title()}</b>
-                    ({prediction['mask_confidence']:.0%})<br>
-                    Emotion: <b>{prediction['emotion'].title()}</b>
-                    ({prediction['emotion_confidence']:.0%})
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+try:
+    while st.session_state.camera_on:
+        grabbed, frame = camera.read()
+        if not grabbed:
+            status_slot.error("The camera frame could not be read. Stopping live detection.")
+            break
+
+        result_image, predictions = analyse_frame(frame, detector, mask_model, emotion_model)
+
+        frame_count += 1
+        elapsed = time.time() - start_time
+        if elapsed >= 1.0:
+            fps = frame_count / elapsed
+            frame_count = 0
+            start_time = time.time()
+
+        frame_slot.image(cv2.cvtColor(result_image, cv2.COLOR_BGR2RGB), use_container_width=True)
+
+        if predictions:
+            lines = [f"**{len(predictions)} face(s) detected** — {fps:.1f} FPS"]
+            for number, prediction in enumerate(predictions, start=1):
+                lines.append(
+                    f"- **Face {number}**: Mask *{prediction['mask'].replace('_', ' ')}* "
+                    f"({prediction['mask_confidence']:.0%}) · "
+                    f"Emotion *{prediction['emotion']}* ({prediction['emotion_confidence']:.0%})"
+                )
+            status_slot.markdown("\n".join(lines))
+        else:
+            status_slot.warning(f"No face detected — {fps:.1f} FPS")
+finally:
+    camera.release()
