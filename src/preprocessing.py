@@ -37,3 +37,23 @@ def preprocess_face(face):
 
     # The model expects a batch, even when we predict one face.
     return np.expand_dims(normalized_face, axis=0)
+
+
+def preprocess_face_emotion(face):
+    """Resize a BGR face image to 48x48 grayscale and scale for CNN."""
+    if face is None or face.size == 0:
+        raise ValueError("The face image is empty.")
+
+    # Convert to grayscale
+    gray_face = cv2.cvtColor(face, cv2.COLOR_BGR2GRAY)
+    
+    # Resize to 48x48
+    resized_face = cv2.resize(gray_face, (48, 48))
+
+    # Normalize to 0-1
+    normalized_face = resized_face.astype("float32") / 255.0
+
+    # Expand dims for channel and batch: (1, 48, 48, 1)
+    expanded_face = np.expand_dims(normalized_face, axis=-1)
+    return np.expand_dims(expanded_face, axis=0)
+
