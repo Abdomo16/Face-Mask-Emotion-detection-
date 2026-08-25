@@ -51,7 +51,7 @@ cd Face-Mask-Emotion-detection-
 
 ### 2. Download the trained models
 
-The two `.h5` models are stored using Git LFS. Install Git LFS once, then download the model files:
+The models are stored using Git LFS. Install Git LFS once, then download the model files:
 
 ```bash
 git lfs install
@@ -62,7 +62,7 @@ You should now have these files:
 
 ```text
 models/mask_model_best.h5
-models/emotion_model_best.h5
+models/emotion_cnn_fixed.keras
 ```
 
 ### 3. Create a virtual environment and install packages
